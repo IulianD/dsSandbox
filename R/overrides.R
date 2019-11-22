@@ -1,17 +1,28 @@
 
-
+options("nfilter.tab" = 1)
+options("nfilter.subset" = 1)
+options("nfilter.glm" = 1)
+options("nfilter.string" = 1000)
+options("nfilter.stringShort" = 1000)
+options("nfilter.kNN" = 1)
+options("nfilter.levels" = 1)
+options("nfilter.noise" = 0)
+options("datashield.privacyLevel" = 1)
 
 datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, opal_name = '.connection_object', tie_first_to_GlobalEnv = FALSE)){
 
   first <- list()
   second <- list()
+  default_locals <- list(how_many = 0, opal_name = '.connection_object', tie_first_to_GlobalEnv = FALSE)
+  defs <- setdiff(names(default_locals), names(locals))
+  locals[defs] <- default_locals[defs]
   if (locals$how_many > 0){
 
     .set.new.datashield.methods(locals$opal_name)
     # mimic a real opal object, for each required pseudo-connection,
     # give it the class 'local' too for later dispatch of assign and aggregate methods
      # I also  need to create a separate environment for each connection to avoid name collisions
-    for (i in 1:how.many){
+    for (i in 1:locals$how_many){
         l <- paste0('local',i)
         first[[l]] <- new.env()
         class(first[[l]]) <- c('local')
@@ -19,7 +30,7 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
         if(locals$tie_first_to_GlobalEnv && l == 1){ # optionally the first envir is globalenv
           first[[l]]$envir <- .GlobalEnv
         } else {
-          first[[l]]$envir <- new.env(parent = .GlobalEnv)
+          first[[l]]$envir <- new.env(parent = parent.frame())
         }
         
         #first[[l]]$version <- '2.7.6-b20170311061231'
@@ -55,7 +66,7 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
   })
   # now poll:
   dsCDISCclient::ds2.wait.for.asyncs(second, 1)
-  assign(local$opal_name, conns, envir = parent.frame())
+  assign(locals$opal_name, conns, envir = parent.frame())
   out
 }
 
@@ -92,9 +103,10 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
 
 
     ret <- eval(expr, envir = my.env)
-    out <- list()
-    out[[opal$name]] <- ret
-    out
+    #out <- list()
+    #out[[opal$name]] <- ret
+    #out
+    ret
  }
 
  sym <- function(opal){
@@ -102,11 +114,23 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
    #if('envir' %in% names(opal)){
      my.env <- opal$envir
    #}
-   unlist(lapply(ls(envir = my.env), function(x) if(class(eval(parse(text=x), envir = my.env)) != 'function') x))
+   ret <- unlist(lapply(ls(envir = my.env), function(x) if(class(eval(parse(text=x), envir = my.env)) != 'function') x))
+   if(is.null(ret)){
+     ret <-character(0)
+   }
+   ret
  }
 
- sym.list <- function(opals){
-  lapply(opals, datashield.symbols) # replace the original datashield.symbols.opal... they missed one there
+ sym.char <- function(opals_vector){
+   real_opals <- get(conn_obj)
+   # deal with local connections
+   ret <- Map(function(x){
+     datashield.symbols(x)
+   },
+   Reduce(c,real_opals)[opals_vector]
+   )
+   unlist(ret, recursive = FALSE)
+   ret
  }
 
  # we also have to redefine the datashield..list methods.
@@ -132,15 +156,16 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
    }
  }
 
- assn.char=function(locals, symbol, value, variables=NULL, missings=FALSE, identifiers=NULL, async=TRUE, wait=TRUE) {
+ assn.char=function(opals_vector, symbol, value, variables=NULL, missings=FALSE, identifiers=NULL, async=TRUE, wait=TRUE) {
 
    real_opals <- get(conn_obj)
    Map(function(x){
+       
+       datashield.assign(x, symbol, value, variables, missings, identifiers , async, wait)
 
-       datashield.assign(x, symbol, value, variables, missings, identifiers , async, waitt)
 
-
-   }, real_opals[locals])
+   }, Reduce(c,real_opals)[opals_vector])
+   invisible()
 
  }
 
@@ -167,27 +192,46 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
    }
    ret
  }
- agg.char=function(locals, expr, async=TRUE, wait=TRUE) {
+ agg.char=function(opals_vector, expr, async=TRUE, wait=TRUE) {
 
    real_opals <- get(conn_obj)
    # deal with local connections
   ret <- Map(function(x){
               datashield.aggregate(x, expr)
             },
-            Reduce(c,real_opals)
+            Reduce(c,real_opals)[opals_vector]
         )
-  unlist(ret, recursive = FALSE)
+  #unlist(ret, recursive = FALSE)
+  ret
 
-}
+ }
+ 
+ logout <- function(opals_vector){
+   real_opals <- get(conn_obj)
+   opal::datashield.logout(real_opals$remotes)
+ }
 
 
-  assign('datashield.assign.local', assn, envir = .GlobalEnv)
+ assign('datashield.assign.local', assn, envir = .GlobalEnv)
  assign('datashield.aggregate.local', agg, envir = .GlobalEnv)
  assign('datashield.assign.character', assn.char, envir = .GlobalEnv)
  assign('datashield.aggregate.character', agg.char, envir = .GlobalEnv)
+ assign('datashield.assign.opal', opal:::datashield.assign.opal, envir = .GlobalEnv)
+ assign('datashield.aggregate.opal', opal:::datashield.aggregate.opal, envir = .GlobalEnv)
  #assign('datashield.aggregate.list', agg.list, envir = .GlobalEnv)
  assign('datashield.symbols.local', sym, envir = .GlobalEnv)
- #assign('datashield.symbols.list', sym.list, envir = .GlobalEnv)
+ assign('datashield.symbols.character', sym.char, envir = .GlobalEnv)
+ assign('datashield.symbols.opal', opal:::datashield.symbols.opal, envir = .GlobalEnv)
+ assign('datashield.logout', logout, envir = .GlobalEnv)
+ assign('print.local', function (x, ...) 
+ {
+   cat("url: local","\n")
+   cat("name:", x$name, "\n")
+   cat("username:", x$username, "\n")
+   if (!is.null(x$restore)) {
+     cat("restore:", x$restore, "\n")
+   }
+ }, envir = .GlobalEnv)
 
  #assignInNamespace('datashield.assign.opal', assn, ns = asNamespace('opal'))
  #assignInNamespace('datashield.aggregate.opal', agg, ns = 'opal')
@@ -197,12 +241,5 @@ datashield.login <- function (logins = NULL, ... , locals = list(how_many = 0, o
  #assignInNamespace('datashield.symbols.list', sym.list, ns = 'opal')
 
 
-}
-
-datashield.assign <- function (opal, symbol, value, variables = NULL, missings = FALSE, identifiers = NULL, async = TRUE, wait = TRUE) {
-  UseMethod("datashield.assign")
-}
-datashield.aggregate <- function (opal, expr, async = TRUE, wait = TRUE){
-  UseMethod("datashield.aggregate")
 }
 

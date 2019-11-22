@@ -12,7 +12,8 @@ Depends:
     opal,
     dsBaseClient,
     dsBase,
-    dsCDISCclient
+    dsCDISCclient,
+    dsCDISC
 Imports: testthat
 Description: Overrides the datashield.login function in the opal package in order to allow
     the creation of pseudo-connections that live in the local sessions. All the opal and datashield
