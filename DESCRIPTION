@@ -1,0 +1,23 @@
+Package: dssSandbox
+Type: Package
+Version: 0.1.0
+Title: Local DataSHIELD sandbox
+Authors@R:
+    c(person(given = "Iulian",
+             family = "Dragan",
+             role = c("aut", "cre"),
+             email = "iulian_dragan@yahoo.com"))
+Depends:
+    R (>= 3.2.0),
+    opal,
+    dsBaseClient,
+    dsBase,
+    dsCDISCclient
+Imports: testthat
+Description: Overrides the datashield.login function in the opal package in order to allow
+    the creation of pseudo-connections that live in the local sessions. All the opal and datashield
+    functions operate seamlessly on these in the same way as on the normal, remote nodes.
+    Furthemore it is possible to mix local pseudo-connections with remote real connections in the same
+    opal object, enabling the virtual pooling of local and remote data.
+Encoding: UTF-8
+RoxygenNote: 7.0.0
