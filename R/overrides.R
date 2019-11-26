@@ -44,16 +44,12 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
 .set.new.login.function <- function(local_conns){
   
   mylogin <- function(...){
-    reals <- opal::datashield.login(...)
+    reals <- NULL
+    if (length(list(...)) > 0){
+      reals <- opal::datashield.login(...)
+    }
     final_conn_obj <- list(locals = local_conns, remotes = reals)
     
-    sapply(reals, function(x){
-      expr <- paste0('c("',x$name,'")')
-      opal::datashield.assign(x, '.whoami', as.symbol(expr), async = TRUE, wait = FALSE) # poll later
-      opal::datashield.aggregate(x, quote(set.stringsAsFactors(TRUE)), async = TRUE, wait = FALSE) # poll later
-    })
-    # now poll:
-    dsCDISCclient::ds2.wait.for.asyncs(reals, 1)
     .set.new.datashield.methods(final_conn_obj)
     out <- Reduce(c, lapply(final_conn_obj,names))
     names(out) <- out

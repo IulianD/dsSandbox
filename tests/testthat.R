@@ -1,4 +1,4 @@
 library(testthat)
-library(dssSandbox)
+library(dsSandbox)
 
-test_check("dssSandbox")
+test_check("dsSandbox")

@@ -1,4 +1,4 @@
-Package: dssSandbox
+Package: dsSandbox
 Type: Package
 Version: 0.1.0
 Title: Local DataSHIELD sandbox
