@@ -17,7 +17,7 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
       first[[l]] <- new.env()
       class(first[[l]]) <- c('local')
       first[[l]]$name <- l
-      if(tie_first_to_GlobalEnv && l == 1){ # optionally the first envir is globalenv
+      if(tie_first_to_GlobalEnv && i == 1){ # optionally the first envir is globalenv
         first[[l]]$envir <- .GlobalEnv
       } else {
         first[[l]]$envir <- new.env()
@@ -37,11 +37,11 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
     }
     
   }
-  .set.new.login.function(first)
+  .set.new.login.function(first, opal_name)
   invisible()
 }
 
-.set.new.login.function <- function(local_conns){
+.set.new.login.function <- function(local_conns, opal_name){
   
   mylogin <- function(...){
     reals <- NULL
@@ -49,10 +49,11 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
       reals <- opal::datashield.login(...)
     }
     final_conn_obj <- list(locals = local_conns, remotes = reals)
-    
-    .set.new.datashield.methods(final_conn_obj)
+    assign(opal_name, final_conn_obj, envir = .GlobalEnv)
+    .set.new.datashield.methods(opal_name)
     out <- Reduce(c, lapply(final_conn_obj,names))
     names(out) <- out
+    attr(out, 'connection_object') <- opal_name
     out
   }
   assign('datashield.login', mylogin, envir = .GlobalEnv)
@@ -60,7 +61,7 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
 }
 
 
-.set.new.datashield.methods <- function(conn_obj){
+.set.new.datashield.methods <- function(opal_name){
   
 
 
@@ -102,6 +103,7 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
  }
 
  sym.char <- function(opals_vector){
+   conn_obj <- get(opal_name, envir = .GlobalEnv)
     Map(function(x){
        datashield.symbols(x)
       },
@@ -111,7 +113,7 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
 
  assn.char=function(opals_vector, symbol, value, variables=NULL, missings=FALSE, identifiers=NULL, async=TRUE, wait=TRUE) {
 
-   real_opals <- conn_obj
+   conn_obj <- get(opal_name, envir = .GlobalEnv)
    Map(function(x){
      datashield.assign(x, symbol, value, variables, missings, identifiers , async, wait)
     }, Reduce(c,conn_obj)[opals_vector])
@@ -119,6 +121,8 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
 }
 
   agg.char=function(opals_vector, expr, async=TRUE, wait=TRUE) {
+    conn_obj <- get(opal_name, envir = .GlobalEnv)
+
     Map(function(x){
               datashield.aggregate(x, expr)
             },
@@ -127,7 +131,12 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
  }
  
  logout <- function(opals_vector){
-   opal::datashield.logout(conn_obj[opals_vector])
+   conn_obj <- get(opal_name, envir = .GlobalEnv)
+   
+   rem <- real_opals$remotes
+   if(length(rem[opals_vector]) > 0){
+    opal::datashield.logout(rem[opals_vector])
+   }
    rm(ls(pattern ='datashield.*.local|datashield.*.opal|datashield.*.character', envir = .GlobalEnv), envir = .GlobalEnv)
    
  }

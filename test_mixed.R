@@ -1,7 +1,7 @@
 logindata <- read.delim('/home/iulian/datashield/logindata_proxy.txt')
 
 dssCreateFakeServers(2)
-
+opals <- datashield.login()
 opals <- datashield.login(logindata[logindata$server %in% c('abos', 'colaus'),])
 
 datashield.aggregate(opals['local1'], as.symbol('partial.data("iris", 1, 40)'))
