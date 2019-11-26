@@ -9,6 +9,7 @@ options("nfilter.levels" = 1)
 options("nfilter.noise" = 0)
 options("datashield.privacyLevel" = 1)
 
+
 dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', tie_first_to_GlobalEnv = FALSE){
   first <- list()
   if(is.numeric(servers) && length(servers) ==1){
@@ -38,20 +39,31 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
     
   }
   .set.new.login.function(first, opal_name)
-  invisible()
+  names(first)
 }
 
 .set.new.login.function <- function(local_conns, opal_name){
   
-  mylogin <- function(...){
+  mylogin <- function(which_connections = names(local_conns), cross_connect = FALSE,...){
     reals <- NULL
     if (length(list(...)) > 0){
       reals <- opal::datashield.login(...)
     }
-    final_conn_obj <- list(locals = local_conns, remotes = reals)
-    assign(opal_name, final_conn_obj, envir = .GlobalEnv)
-    .set.new.datashield.methods(opal_name)
-    out <- Reduce(c, lapply(final_conn_obj,names))
+    if(!is.null(which_connections)){
+      wh <- intersect(which_connections, names(local_conns))
+     if(length(wh) == 0 && is.null(reals)){
+        stop('No connections provided.')
+      }
+      local_conns <- local_conns[wh]
+    }
+    if(!cross_connect){
+      final_conn_obj <- list(locals = local_conns, remotes = reals)
+      assign(opal_name, final_conn_obj, envir = .GlobalEnv)
+      .set.new.datashield.methods(opal_name)
+      out <- Reduce(c, lapply(final_conn_obj,names))
+    }  else {
+      out <- names(local_conns)
+    }
     names(out) <- out
     attr(out, 'connection_object') <- opal_name
     out
