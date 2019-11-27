@@ -8,9 +8,15 @@ options("nfilter.kNN" = 1)
 options("nfilter.levels" = 1)
 options("nfilter.noise" = 0)
 options("datashield.privacyLevel" = 1)
+ 
+#' @title Create a number of pseudo opal/datashield servers in the local session for fun and profit.
+#' @description 
+#' @param opal_name required, a character, the name of the list containing the pseudo servers
+#' @param servers either the number of servers or a vector containing their names
+#' @param tie_first_to_GlobalEnv a logical, should the first server session be the same as .GlobalEnv? See details.
 
-
-dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', tie_first_to_GlobalEnv = FALSE){
+#' @export
+dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv = FALSE){
   first <- list()
   if(is.numeric(servers) && length(servers) ==1){
     for (i in 1:servers){
@@ -56,16 +62,21 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
       }
       local_conns <- local_conns[wh]
     }
-    if(!cross_connect){
+    if(exists(opal_name, envir = .GlobalEnv)){
+    final_conn_obj <-  get(opal_name, envir = .GlobalEnv)  
+     new_reals <- setdiff(names(reals), names(final_conn_obj$reals))
+     if(length(new_reals) > 0 ){
+       final_conn_obj$reals[new_reals] <- reals[new_reals]
+     }
+    } else {
       final_conn_obj <- list(locals = local_conns, remotes = reals)
       assign(opal_name, final_conn_obj, envir = .GlobalEnv)
-      .set.new.datashield.methods(opal_name)
-      out <- Reduce(c, lapply(final_conn_obj,names))
-    }  else {
-      out <- names(local_conns)
+     .set.new.datashield.methods(opal_name)
     }
-    names(out) <- out
-    attr(out, 'connection_object') <- opal_name
+     out <- Reduce(c, lapply(final_conn_obj,names))
+     out <- names(local_conns) 
+     names(out) <- out
+     attr(out, 'connection_object') <- opal_name
     out
   }
   assign('datashield.login', mylogin, envir = .GlobalEnv)
@@ -149,8 +160,7 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
    if(length(rem[opals_vector]) > 0){
     opal::datashield.logout(rem[opals_vector])
    }
-   rm(ls(pattern ='datashield.*.local|datashield.*.opal|datashield.*.character', envir = .GlobalEnv), envir = .GlobalEnv)
-   
+   rm(ls(pattern ='datashield.*.local|datashield.*.opal|datashield.*.character|print.local', envir = .GlobalEnv), envir = .GlobalEnv)
  }
 
  assign('datashield.assign.local', assn, envir = .GlobalEnv)
@@ -168,10 +178,9 @@ dssCreateFakeServers <- function(servers = 1, opal_name = '.connection_object', 
  {
    cat("url: local","\n")
    cat("name:", x$name, "\n")
-   cat("username:", x$username, "\n")
-   if (!is.null(x$restore)) {
-     cat("restore:", x$restore, "\n")
-   }
+   cat("content: ")
+   sapply(ls(envir = x$envir), function(y) cat(y,"(", class(get(y, envir = x$envir)), ') ', sep = ""))
+   cat("\n")  
  }, envir = .GlobalEnv)
 
 
