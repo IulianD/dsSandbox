@@ -9,12 +9,19 @@ options("nfilter.levels" = 1)
 options("nfilter.noise" = 0)
 options("datashield.privacyLevel" = 1)
  
-#' @title Create a number of pseudo opal/datashield servers in the local session for fun and profit.
-#' @description 
-#' @param opal_name required, a character, the name of the list containing the pseudo servers
+#' @title Fake opal servers in R
+#' @description Create pseudo opal/datashield servers in the local session for fun and profit.
+#' @param opal_name required, a character. The name of a new list (created by the function a a side effect) 
+#' containing the pseudo servers. 
 #' @param servers either the number of servers or a vector containing their names
 #' @param tie_first_to_GlobalEnv a logical, should the first server session be the same as .GlobalEnv? See details.
-
+#' @details The function creates a list object containing the local pseudo servers as elements. The names of the servers 
+#' are either provided in the "servers" parameter or created as 'local1', 'local2' etc. Each "server" is an environment.
+#' If tie_first_to_GlobalEnv is set to TRUE, the first sever in the list will by a reference to the global environment.
+#' This means that all the objects in .GlobalEnv will become available to datashield... methods.
+#' Lastly, the function overrides datashield.login from the package opal. 
+#' @seealso \code{\link{datashield.login}}
+#' @return a vector containing the server names. This vector (or a subset) will be used by datashield.login as first parameter.
 #' @export
 dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv = FALSE){
   first <- list()
@@ -50,33 +57,40 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
 
 .set.new.login.function <- function(local_conns, opal_name){
   
-  mylogin <- function(which_connections = names(local_conns), cross_connect = FALSE,...){
-    reals <- NULL
-    if (length(list(...)) > 0){
-      reals <- opal::datashield.login(...)
-    }
+  mylogin <- function(which_connections = names(local_conns), ...){
+    reals <- list()
+    inputs <- list(...)
     if(!is.null(which_connections)){
       wh <- intersect(which_connections, names(local_conns))
-     if(length(wh) == 0 && is.null(reals)){
-        stop('No connections provided.')
-      }
-      local_conns <- local_conns[wh]
+     local_conns <- local_conns[wh]
     }
-    if(exists(opal_name, envir = .GlobalEnv)){
-    final_conn_obj <-  get(opal_name, envir = .GlobalEnv)  
-     new_reals <- setdiff(names(reals), names(final_conn_obj$reals))
-     if(length(new_reals) > 0 ){
-       final_conn_obj$reals[new_reals] <- reals[new_reals]
-     }
+    
+    if(exists(opal_name, envir = .GlobalEnv) ){
+      final_conn_obj <-  get(opal_name, envir = .GlobalEnv)
     } else {
-      final_conn_obj <- list(locals = local_conns, remotes = reals)
-      assign(opal_name, final_conn_obj, envir = .GlobalEnv)
-     .set.new.datashield.methods(opal_name)
+      final_conn_obj <- list(locals = local_conns, remotes = NULL)
+      .set.new.datashield.methods(opal_name)
     }
-     out <- Reduce(c, lapply(final_conn_obj,names))
-     out <- names(local_conns) 
-     names(out) <- out
-     attr(out, 'connection_object') <- opal_name
+    if (length(inputs) > 0){
+      logindf <- inputs[[1]]
+
+        if(length(final_conn_obj$remotes) > 0 ){
+          logindf <- logindf[!(logindf$server %in% names(final_conn_obj$remotes)),] # do not connect twice to the same server
+          inputs[[1]] <- logindf
+        }
+      if(nrow(inputs[[1]]) > 0 ){
+        reals <- do.call('datashield.login', inputs, envir = asNamespace('opal'))
+        final_conn_obj$remotes[names(reals)] <- reals
+      }
+    }
+    if(length(wh) == 0 && is.null(reals)){
+      stop('No new connections provided.')
+    }
+    
+    assign(opal_name, final_conn_obj, envir = .GlobalEnv)
+    out <- Reduce(c, lapply(final_conn_obj,names))
+    names(out) <- out
+    attr(out, 'connection_object') <- opal_name
     out
   }
   assign('datashield.login', mylogin, envir = .GlobalEnv)
@@ -156,11 +170,15 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
  logout <- function(opals_vector){
    conn_obj <- get(opal_name, envir = .GlobalEnv)
    
-   rem <- real_opals$remotes
-   if(length(rem[opals_vector]) > 0){
-    opal::datashield.logout(rem[opals_vector])
+   rem <- conn_obj$remotes
+   to_logout <- rem[opals_vector]
+   to_logout <- to_logout[!sapply(to_logout, is.null)]
+   if(length(to_logout) > 0){
+    opal::datashield.logout(to_logout)
    }
-   rm(ls(pattern ='datashield.*.local|datashield.*.opal|datashield.*.character|print.local', envir = .GlobalEnv), envir = .GlobalEnv)
+  conn_obj$remotes[names(to_logout)] <- NULL
+  assign(opal_name, conn_obj, envir = .GlobalEnv)
+   rm(list = ls(pattern ='datashield.*.local|datashield.*.opal|datashield.*.character|print.local', envir = .GlobalEnv), envir = .GlobalEnv)
  }
 
  assign('datashield.assign.local', assn, envir = .GlobalEnv)
@@ -186,6 +204,69 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
 
 }
 
+
+#' @title Extend datashield.login from package opal
+#' @description Creates the necessary software infrastructure for the usual opal and datashield functions to be able to run in
+#' local pseudo-sessions as well as in remote real sessions 
+#' @param which_connections optional, a vector containing the names of the local "sessions" to "connect" to. Normally the output
+#' of dssCreateFakeServers (or a subset of it)
+#' @param ... optional, the parameters for opal::datashield.login (logins dataframe, etc) in case we want to connect to any remote, real opal servers
+#' @details This function creates the final connection object and assigns it in the global environment. Moreover:
+#' * If necessary establishes connections to remote, real servers
+#' * Creates variants of the generics datashield.assign , datashield.aggregate and datashield.symbols that work on the local pseudo sessions.
+#' * Returns a vector that can be used in various dsBaseClient (and other) functions. Attention: these functions will work only if 
+#' called with an explicit datasources parameter (ex: ds.var('some_vector', **datasources = myopals**) and not: ds.var('some_vector'))
+#' @seealso \link{dssCreateFakeServers}
+#' @return a vector containing the names of all the establised connections (real and fake)
+#' @examples 
+#' # Mixed opal connections, local(fake, in my session) + remote(real)
+#' # Read a real connection dataframe fro a file
+#' logindata <- read.delim('/path to your/logindata.txt')
+#' # say it looks like this:
+#' logindata
+#'   server                     url       user      password    table
+#'1  real1  https://remote.opal.node  some_user   some_pass   proj.TABLE
+#' # create 2 local connections: 
+#' x <- dssCreateFakeServers('all_conns',c('fake1', 'fake2'))
+#' #login:
+#' opals <- datashield.login(x,logindata)
+#' # opals contains 3 connections, 2 locals, one remote. You can examine them:
+#' opals
+#' all_conns
+#' # create a function called partial_data in the local session as well as on the remote node
+#' # on the remote node this function must be published as an aggregate method:
+#'partial_data <- function (what, start = NULL, end = NULL) {
+#'  data(list = list(what), envir = environment())
+#'  my.df <- get(what)
+#'  if (is.null(start)) {
+#'    start <- 1
+#'  }
+#'  if (is.null(end)) {
+#'    end <- nrow(my.df)
+#'  }
+#'  my.df <- my.df[start:end, ]
+#'  assign(what, my.df, pos = parent.frame())
+#'  TRUE
+#'}
+#' the above loads a piece of an R dataset
+#' # we can use it to load 3 chunks of the 'iris' dataset, each on a different node
+#' datashield.aggregate(opals['fake1'], as.symbol('partial.data("iris", 1, 40)'))
+#' datashield.aggregate(opals['fake2'], as.symbol('partial.data("iris", 41, 100)'))
+#' datashield.aggregate(opals['real1'], as.symbol('partial.data("iris", 101, 150)'))
+#' # run some ds... commands:
+#' ds.summary('iris', datasources = opals)
+#' ds.mean('iris', datasources = opals) # always specify the datasources explicitly
+#' # where's my local data?
+#' ls(envir = all_conns$locals$fake1$envir)
+#' ls(envir = all_conns$locals$fake2$envir)
+#' 
+#' datashield.logout(opals)
+#' @export
+
+datashield.login <- function(which_connections = names(local_conns), ...){
+ 
+ # Here just for the documentation. The real function is created on the fly by dssCreateFakeServers
+}
   
 
 

@@ -21,4 +21,5 @@ Description: Overrides the datashield.login function in the opal package in orde
     Furthemore it is possible to mix local pseudo-connections with remote real connections in the same
     opal object, enabling the virtual pooling of local and remote data.
 Encoding: UTF-8
+Roxygen: list(markdown = TRUE) 
 RoxygenNote: 7.0.0
