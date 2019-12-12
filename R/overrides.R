@@ -11,7 +11,7 @@ options("datashield.privacyLevel" = 1)
  
 #' @title Fake opal servers in R
 #' @description Create pseudo opal/datashield servers in the local session for fun and profit.
-#' @param opal_name required, a character. The name of a new list (created by the function a a side effect) 
+#' @param opal_name required, a character. The name of a new list (created by the function as a side effect) 
 #' containing the pseudo servers. 
 #' @param servers either the number of servers or a vector containing their names
 #' @param tie_first_to_GlobalEnv a logical, should the first server session be the same as .GlobalEnv? See details.
@@ -24,26 +24,29 @@ options("datashield.privacyLevel" = 1)
 #' @return a vector containing the server names. This vector (or a subset) will be used by datashield.login as first parameter.
 #' @export
 dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv = FALSE){
+  if(missing(opal_name)){
+    stop('opal_name is required....')
+  }
   first <- list()
   if(is.numeric(servers) && length(servers) ==1){
     for (i in 1:servers){
       l <- paste0('local',i)
-      first[[l]] <- new.env()
+      first[[l]] <- new.env(parent = .GlobalEnv)
       class(first[[l]]) <- c('local')
       first[[l]]$name <- l
       if(tie_first_to_GlobalEnv && i == 1){ # optionally the first envir is globalenv
         first[[l]]$envir <- .GlobalEnv
       } else {
-        first[[l]]$envir <- new.env()
+        first[[l]]$envir <- new.env(parent = .GlobalEnv)
       }
 
     }
   } else {
     first <- Map( function(x){
-      ret<- new.env()
+      ret<- new.env(parent = .GlobalEnv)
       class(ret) <- c('local')
       ret$name <- x
-      ret$envir <- new.env()
+      ret$envir <- new.env(parent = .GlobalEnv)
       ret
     }, servers)
     if(tie_first_to_GlobalEnv){
@@ -52,6 +55,8 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
     
   }
   .set.new.login.function(first, opal_name)
+  .set.new.datashield.methods(opal_name)
+  assign(opal_name, list(locals = first), envir = .GlobalEnv)
   names(first)
 }
 
@@ -60,21 +65,12 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
   mylogin <- function(which_connections = names(local_conns), ...){
     reals <- list()
     inputs <- list(...)
-    if(!is.null(which_connections)){
-      wh <- intersect(which_connections, names(local_conns))
-     local_conns <- local_conns[wh]
-    }
-    
-    if(exists(opal_name, envir = .GlobalEnv) ){
-      final_conn_obj <-  get(opal_name, envir = .GlobalEnv)
-    } else {
-      final_conn_obj <- list(locals = local_conns, remotes = NULL)
-      .set.new.datashield.methods(opal_name)
-    }
+    wh <- intersect(which_connections, names(local_conns))
+    local_conns <- local_conns[wh]
+    final_conn_obj <-  get(opal_name, envir = .GlobalEnv)
     if (length(inputs) > 0){
       logindf <- inputs[[1]]
-
-        if(length(final_conn_obj$remotes) > 0 ){
+      if(length(final_conn_obj$remotes) > 0 ){
           logindf <- logindf[!(logindf$server %in% names(final_conn_obj$remotes)),] # do not connect twice to the same server
           inputs[[1]] <- logindf
         }
@@ -88,7 +84,7 @@ dssCreateFakeServers <- function(opal_name, servers = 1, tie_first_to_GlobalEnv 
     }
     
     assign(opal_name, final_conn_obj, envir = .GlobalEnv)
-    out <- Reduce(c, lapply(final_conn_obj,names))
+    out <- c(wh, names(reals))
     names(out) <- out
     attr(out, 'connection_object') <- opal_name
     out
